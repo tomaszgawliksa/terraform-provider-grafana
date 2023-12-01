@@ -41,6 +41,10 @@ const (
 	reportFormatPDF   = "pdf"
 	reportFormatCSV   = "csv"
 	reportFormatImage = "image"
+
+	reportStateDraft     = "draft"
+	reportStateScheduled = "scheduled"
+	reportStatePaused    = "paused"
 )
 
 var (
@@ -48,6 +52,7 @@ var (
 	reportOrientations = []string{reportOrientationLandscape, reportOrientationPortrait}
 	reportFrequencies  = []string{reportFrequencyNever, reportFrequencyOnce, reportFrequencyHourly, reportFrequencyDaily, reportFrequencyWeekly, reportFrequencyMonthly, reportFrequencyCustom}
 	reportFormats      = []string{reportFormatPDF, reportFormatCSV, reportFormatImage}
+	states             = []string{reportStateDraft, reportStateScheduled, reportStatePaused}
 )
 
 func ResourceReport() *schema.Resource {
@@ -90,6 +95,7 @@ func ResourceReport() *schema.Resource {
 				ExactlyOneOf: []string{"dashboard_id", "dashboard_uid"},
 				Computed:     true,
 				Optional:     true,
+				Deprecated:   "Use dashboards instead",
 				Description:  "Dashboard to be sent in the report.",
 			},
 			"recipients": {
@@ -123,6 +129,7 @@ func ResourceReport() *schema.Resource {
 				Type:        schema.TypeBool,
 				Optional:    true,
 				Default:     false,
+				Deprecated:  "Include csv in formats",
 				Description: "Whether to include a CSV file of table panel data.",
 			},
 			"layout": {
@@ -148,11 +155,19 @@ func ResourceReport() *schema.Resource {
 					ValidateFunc: validation.StringInSlice(reportFormats, false),
 				},
 			},
+			"state": {
+				Type:         schema.TypeString,
+				Optional:     true,
+				Description:  common.AllowedValuesDescription("State of the report", states),
+				Default:      reportStateScheduled,
+				ValidateFunc: validation.StringInSlice(states, false),
+			},
 			"time_range": {
 				Type:        schema.TypeList,
 				Optional:    true,
 				Description: "Time range of the report.",
 				MaxItems:    1,
+				Deprecated:  "Set time range in dashboards for each dashboard",
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
 						"from": {
@@ -236,6 +251,58 @@ func ResourceReport() *schema.Resource {
 							Optional:    true,
 							Description: "Send the report on the last day of the month",
 							Default:     false,
+						},
+						"timezone": {
+							Type:        schema.TypeString,
+							Optional:    true,
+							Description: "Schedule timezone",
+							Default:     "GMT",
+						},
+					},
+				},
+			},
+			"dashboards": {
+				Type:        schema.TypeList,
+				Description: "List of dashboards to be sent in the report",
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"dashboard": {
+							Type:        schema.TypeList,
+							Description: "Dashboard information",
+							MinItems:    1,
+							MaxItems:    1,
+							Elem: &schema.Resource{
+								Schema: map[string]*schema.Schema{
+									"uid": {
+										Type:        schema.TypeString,
+										Description: "Dashboard UID",
+									},
+								},
+							},
+						},
+						"time_range": {
+							Type:        schema.TypeList,
+							Description: "Dashboard time range",
+							Optional:    true,
+							MinItems:    1,
+							MaxItems:    1,
+							Elem: &schema.Resource{
+								Schema: map[string]*schema.Schema{
+									"from": {
+										Type:        schema.TypeString,
+										Description: "Start of the time range.",
+									},
+									"to": {
+										Type:        schema.TypeString,
+										Description: "End of the time range.",
+									},
+								},
+							},
+						},
+						"report_variables": {
+							Type:        schema.TypeString,
+							Optional:    true,
+							Description: "Dashboard report variables",
 						},
 					},
 				},
@@ -400,6 +467,7 @@ func schemaToReportParams(client *client.GrafanaHTTPAPI, d *schema.ResourceData)
 
 func createReportSchema(d *schema.ResourceData) *models.CreateOrUpdateConfigCmd {
 	return &models.CreateOrUpdateConfigCmd{
+		DashboardID:        int64(d.Get("dashboard_id").(int)),
 		Name:               d.Get("name").(string),
 		EnableDashboardURL: d.Get("include_dashboard_link").(bool),
 		EnableCSV:          d.Get("include_table_csv").(bool),
@@ -416,21 +484,28 @@ func createReportSchema(d *schema.ResourceData) *models.CreateOrUpdateConfigCmd 
 }
 
 func setDeprecatedDashboardValues(client *client.GrafanaHTTPAPI, report *models.CreateOrUpdateConfigCmd, d *schema.ResourceData) error {
+	id := int64(d.Get("dashboard_id").(int))
 	uid := d.Get("dashboard_uid").(string)
-	if uid == "" {
-		return fmt.Errorf("dashboard_uid cannot be empty")
+	dashboardName := ""
+
+	if id == 0 && uid == "" {
+		return fmt.Errorf("dashboard_id or dashboard_uid should be set")
 	}
 
-	dashboard, err := client.Dashboards.GetDashboardByUID(&dashboards.GetDashboardByUIDParams{UID: uid})
-	if err != nil {
-		return fmt.Errorf("error retrieving dashboard information: %s", err)
+	if uid != "" {
+		dashboard, err := client.Dashboards.GetDashboardByUID(&dashboards.GetDashboardByUIDParams{UID: uid})
+		if err == nil {
+			return fmt.Errorf("error retrieving dashboard information: %s", err)
+		}
+		dashboardName = dashboard.Payload.Meta.Slug
 	}
 
 	report.Dashboards = []*models.DashboardDTO{
 		{
 			Dashboard: &models.DashboardReportDTO{
+				ID:   id,
 				UID:  uid,
-				Name: dashboard.Payload.Meta.Slug,
+				Name: dashboardName,
 			},
 			ReportVariables: d.Get("template_vars"),
 		},
