@@ -406,33 +406,36 @@ func ReadReport(ctx context.Context, d *schema.ResourceData, meta interface{}) d
 }
 
 func UpdateReport(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	client, _, idStr := ClientFromExistingOrgResource(meta, d.Id())
+	client, _, idStr := OAPIClientFromExistingOrgResource(meta, d.Id())
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
 		return diag.FromErr(err)
 	}
 
-	report, err := schemaToReport(client, d)
+	report, err := schemaToReportParams(client, d)
 	if err != nil {
 		return diag.FromErr(err)
 	}
-	report.ID = id
 
-	if err := client.UpdateReport(report); err != nil {
+	params := reports.NewUpdateReportParams().WithID(id).WithBody(report)
+	_, err = client.Reports.UpdateReport(params)
+	if err != nil {
 		data, _ := json.Marshal(report)
 		return diag.Errorf("error updating the following report:\n%s\n%v", string(data), err)
 	}
+
 	return ReadReport(ctx, d, meta)
 }
 
 func DeleteReport(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	client, _, idStr := ClientFromExistingOrgResource(meta, d.Id())
+	client, _, idStr := OAPIClientFromExistingOrgResource(meta, d.Id())
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
 		return diag.FromErr(err)
 	}
 
-	err = client.DeleteReport(id)
+	params := reports.NewDeleteReportParams().WithID(id)
+	_, err = client.Reports.DeleteReport(params)
 	diag, _ := common.CheckReadError("report", d, err)
 	return diag
 }
