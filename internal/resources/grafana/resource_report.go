@@ -455,11 +455,6 @@ func schemaToReportParams(client *client.GrafanaHTTPAPI, d *schema.ResourceData)
 		report.Formats = []models.Type{reportFormatPDF}
 	}
 
-	report.Schedule = &models.ScheduleDTO{
-		Frequency: d.Get("schedule.0.frequency").(string),
-		TimeZone:  d.Get("schedule.0.timezone").(string),
-	}
-
 	if err := setReportFrequency(report, d); err != nil {
 		return nil, err
 	}
@@ -482,6 +477,10 @@ func createReportSchema(d *schema.ResourceData) *models.CreateOrUpdateConfigCmd 
 		ReplyTo:     d.Get("reply_to").(string),
 		ScaleFactor: int64(d.Get("scale_factor").(int)),
 		State:       models.State(d.Get("state").(string)),
+		Schedule: &models.ScheduleDTO{
+			Frequency: d.Get("schedule.0.frequency").(string),
+			TimeZone:  d.Get("schedule.0.timezone").(string),
+		},
 	}
 }
 
