@@ -5,6 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/go-openapi/strfmt"
+	"github.com/grafana/grafana-openapi-client-go/client"
+	"github.com/grafana/grafana-openapi-client-go/client/dashboards"
+	"github.com/grafana/grafana-openapi-client-go/client/reports"
+	"github.com/grafana/grafana-openapi-client-go/models"
 	"strconv"
 	"strings"
 	"time"
@@ -240,19 +245,20 @@ func ResourceReport() *schema.Resource {
 }
 
 func CreateReport(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	client, orgID := ClientFromNewOrgResource(meta, d)
+	client, orgID := OAPIClientFromNewOrgResource(meta, d)
 
-	report, err := schemaToReport(client, d)
+	req, err := schemaToReportParams(client, d)
+	if err != nil {
+		diag.FromErr(err)
+	}
+
+	params := reports.NewCreateReportParams().WithBody(req)
+	res, err := client.Reports.CreateReport(params)
 	if err != nil {
 		return diag.FromErr(err)
 	}
 
-	id, err := client.NewReport(report)
-	if err != nil {
-		data, _ := json.Marshal(report)
-		return diag.Errorf("error creating the following report:\n%s\n%v", string(data), err)
-	}
-	d.SetId(MakeOrgResourceID(orgID, id))
+	d.SetId(MakeOrgResourceID(orgID, res.Payload.ID))
 	return ReadReport(ctx, d, meta)
 }
 
@@ -346,6 +352,138 @@ func DeleteReport(ctx context.Context, d *schema.ResourceData, meta interface{})
 	err = client.DeleteReport(id)
 	diag, _ := common.CheckReadError("report", d, err)
 	return diag
+}
+
+func schemaToReportParams(client *client.GrafanaHTTPAPI, d *schema.ResourceData) (*models.CreateOrUpdateConfigCmd, error) {
+	report := createReportSchema(d)
+	dashboards, ok := d.Get("dashboards").([]*models.DashboardDTO)
+	if ok && len(dashboards) > 0 {
+		report.Dashboards = dashboards
+	} else {
+		if err := setDeprecatedDashboardValues(client, report, d); err != nil {
+			return nil, err
+		}
+	}
+
+	report.Formats = d.Get("formats").([]models.Type)
+	if len(report.Formats) == 0 {
+		report.Formats = []models.Type{reportFormatPDF}
+	}
+
+	frequency := d.Get("schedule.0.frequency").(string)
+	timeZone, ok := d.Get("schedule.0.timezone").(string)
+	if !ok || timeZone == "" {
+		timeZone = "GMT"
+	}
+
+	report.Schedule = &models.ScheduleDTO{
+		Frequency: frequency,
+		TimeZone:  timeZone,
+	}
+
+	if err := setReportFrequency(report, d); err != nil {
+		return nil, err
+	}
+
+	return report, nil
+}
+
+func createReportSchema(d *schema.ResourceData) *models.CreateOrUpdateConfigCmd {
+	return &models.CreateOrUpdateConfigCmd{
+		Name:               d.Get("name").(string),
+		EnableDashboardURL: d.Get("include_dashboard_link").(bool),
+		EnableCSV:          d.Get("include_table_csv").(bool),
+		Message:            d.Get("message").(string),
+		Options: &models.ReportOptionsDTO{
+			Layout:      d.Get("layout").(string),
+			Orientation: d.Get("orientation").(string),
+		},
+		Recipients:  strings.Join(common.ListToStringSlice(d.Get("recipients").([]interface{})), ","),
+		ReplyTo:     d.Get("reply_to").(string),
+		ScaleFactor: int64(d.Get("scale_factor").(int)),
+		State:       models.State(d.Get("state").(string)),
+	}
+}
+
+func setDeprecatedDashboardValues(client *client.GrafanaHTTPAPI, report *models.CreateOrUpdateConfigCmd, d *schema.ResourceData) error {
+	uid := d.Get("dashboard_uid").(string)
+	if uid == "" {
+		return fmt.Errorf("dashboard_uid cannot be empty")
+	}
+
+	dashboard, err := client.Dashboards.GetDashboardByUID(&dashboards.GetDashboardByUIDParams{UID: uid})
+	if err != nil {
+		return fmt.Errorf("error retrieving dashboard information: %s", err)
+	}
+
+	report.Dashboards = []*models.DashboardDTO{
+		{
+			Dashboard: &models.DashboardReportDTO{
+				UID:  uid,
+				Name: dashboard.Payload.Meta.Slug,
+			},
+			ReportVariables: d.Get("template_vars"),
+		},
+	}
+
+	timeRange := d.Get("time_range").([]interface{})
+	if len(timeRange) > 0 {
+		tr := timeRange[0].(map[string]interface{})
+		report.Dashboards[0].TimeRange = &models.TimeRangeDTO{
+			From: tr["from"].(string),
+			To:   tr["to"].(string),
+		}
+	}
+
+	return nil
+}
+
+func setReportFrequency(report *models.CreateOrUpdateConfigCmd, d *schema.ResourceData) error {
+	// Set schedule start time
+	if report.Schedule.Frequency != reportFrequencyNever {
+		if startTimeStr := d.Get("schedule.0.start_time").(string); startTimeStr != "" {
+			startDate, err := time.Parse(time.RFC3339, startTimeStr)
+			if err != nil {
+				return err
+			}
+			startDate = startDate.UTC()
+			report.Schedule.StartDate = strfmt.DateTime(startDate)
+		}
+	}
+
+	// Set schedule end time
+	if report.Schedule.Frequency != reportFrequencyOnce && report.Schedule.Frequency != reportFrequencyNever {
+		if endTimeStr := d.Get("schedule.0.end_time").(string); endTimeStr != "" {
+			endDate, err := time.Parse(time.RFC3339, endTimeStr)
+			if err != nil {
+				return err
+			}
+			endDate = endDate.UTC()
+			report.Schedule.EndDate = strfmt.DateTime(endDate)
+		}
+	}
+
+	if report.Schedule.Frequency == reportFrequencyMonthly {
+		if lastDayOfMonth := d.Get("schedule.0.last_day_of_month").(bool); lastDayOfMonth {
+			report.Schedule.DayOfMonth = "last"
+		}
+	}
+
+	if reportWorkdaysOnlyConfigAllowed(report.Schedule.Frequency) {
+		report.Schedule.WorkdaysOnly = d.Get("schedule.0.workdays_only").(bool)
+	}
+
+	if report.Schedule.Frequency == reportFrequencyCustom {
+		customInterval := d.Get("schedule.0.custom_interval").(string)
+		amount, unit, err := parseCustomReportInterval(customInterval)
+		if err != nil {
+			return err
+		}
+		report.Schedule.IntervalAmount = int64(amount)
+		report.Schedule.IntervalFrequency = unit
+	}
+
+	return nil
 }
 
 func schemaToReport(client *gapi.Client, d *schema.ResourceData) (gapi.Report, error) {
