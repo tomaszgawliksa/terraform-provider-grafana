@@ -263,34 +263,41 @@ func CreateReport(ctx context.Context, d *schema.ResourceData, meta interface{})
 }
 
 func ReadReport(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	client, _, idStr := ClientFromExistingOrgResource(meta, d.Id())
+	client, _, idStr := OAPIClientFromExistingOrgResource(meta, d.Id())
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
 		return diag.FromErr(err)
 	}
-	r, err := client.Report(id)
+
+	params := reports.NewGetReportParams().WithID(id)
+	r, err := client.Reports.GetReport(params)
 	if err, shouldReturn := common.CheckReadError("report", d, err); shouldReturn {
 		return err
 	}
 
-	d.SetId(MakeOrgResourceID(r.OrgID, id))
-	d.Set("dashboard_id", r.Dashboards[0].Dashboard.ID)
-	d.Set("dashboard_uid", r.Dashboards[0].Dashboard.UID)
-	d.Set("name", r.Name)
-	d.Set("recipients", strings.Split(r.Recipients, ","))
-	d.Set("reply_to", r.ReplyTo)
-	d.Set("message", r.Message)
-	d.Set("include_dashboard_link", r.EnableDashboardURL)
-	d.Set("include_table_csv", r.EnableCSV)
-	d.Set("layout", r.Options.Layout)
-	d.Set("orientation", r.Options.Orientation)
-	d.Set("org_id", strconv.FormatInt(r.OrgID, 10))
+	d.SetId(MakeOrgResourceID(r.Payload.OrgID, id))
+	d.Set("dashboard_id", r.Payload.Dashboards[0].Dashboard.ID)
+	d.Set("dashboard_uid", r.Payload.Dashboards[0].Dashboard.UID)
+	d.Set("name", r.Payload.Name)
+	d.Set("recipients", strings.Split(r.Payload.Recipients, ","))
+	d.Set("reply_to", r.Payload.ReplyTo)
+	d.Set("message", r.Payload.Message)
+	d.Set("include_dashboard_link", r.Payload.EnableDashboardURL)
+	d.Set("include_table_csv", r.Payload.EnableCSV)
+	d.Set("layout", r.Payload.Options.Layout)
+	d.Set("orientation", r.Payload.Options.Orientation)
+	d.Set("org_id", strconv.FormatInt(r.Payload.OrgID, 10))
+	d.Set("state", r.Payload.State)
 
 	if _, ok := d.GetOk("formats"); ok {
-		d.Set("formats", common.StringSliceToSet(r.Formats))
+		formats := make([]string, len(r.Payload.Formats))
+		for i, f := range r.Payload.Formats {
+			formats[i] = string(f)
+		}
+		d.Set("formats", common.StringSliceToSet(formats))
 	}
 
-	timeRange := r.Dashboards[0].TimeRange
+	timeRange := r.Payload.Dashboards[0].TimeRange
 	if timeRange.From != "" {
 		d.Set("time_range", []interface{}{
 			map[string]interface{}{
@@ -301,19 +308,28 @@ func ReadReport(ctx context.Context, d *schema.ResourceData, meta interface{}) d
 	}
 
 	schedule := map[string]interface{}{
-		"frequency":     r.Schedule.Frequency,
-		"workdays_only": r.Schedule.WorkdaysOnly,
+		"timezone":      r.Payload.Schedule.TimeZone,
+		"frequency":     r.Payload.Schedule.Frequency,
+		"workdays_only": r.Payload.Schedule.WorkdaysOnly,
 	}
-	if r.Schedule.IntervalAmount != 0 && r.Schedule.IntervalFrequency != "" {
-		schedule["custom_interval"] = fmt.Sprintf("%d %s", r.Schedule.IntervalAmount, r.Schedule.IntervalFrequency)
+	if r.Payload.Schedule.IntervalAmount != 0 && r.Payload.Schedule.IntervalFrequency != "" {
+		schedule["custom_interval"] = fmt.Sprintf("%d %s", r.Payload.Schedule.IntervalAmount, r.Payload.Schedule.IntervalFrequency)
 	}
-	if r.Schedule.StartDate != nil {
-		schedule["start_time"] = r.Schedule.StartDate.Format(time.RFC3339)
+	if r.Payload.Schedule.StartDate.String() != "" {
+		t, err := time.Parse(time.RFC3339, r.Payload.Schedule.StartDate.String())
+		if err != nil {
+			return diag.FromErr(err)
+		}
+		schedule["start_time"] = t.UTC()
 	}
-	if r.Schedule.EndDate != nil {
-		schedule["end_time"] = r.Schedule.EndDate.Format(time.RFC3339)
+	if r.Payload.Schedule.EndDate.String() != "" {
+		t, err := time.Parse(time.RFC3339, r.Payload.Schedule.EndDate.String())
+		if err != nil {
+			return diag.FromErr(err)
+		}
+		schedule["end_time"] = t.UTC()
 	}
-	if r.Schedule.DayOfMonth == "last" {
+	if r.Payload.Schedule.DayOfMonth == "last" {
 		schedule["last_day_of_month"] = true
 	}
 
@@ -370,15 +386,9 @@ func schemaToReportParams(client *client.GrafanaHTTPAPI, d *schema.ResourceData)
 		report.Formats = []models.Type{reportFormatPDF}
 	}
 
-	frequency := d.Get("schedule.0.frequency").(string)
-	timeZone, ok := d.Get("schedule.0.timezone").(string)
-	if !ok || timeZone == "" {
-		timeZone = "GMT"
-	}
-
 	report.Schedule = &models.ScheduleDTO{
-		Frequency: frequency,
-		TimeZone:  timeZone,
+		Frequency: d.Get("schedule.0.frequency").(string),
+		TimeZone:  d.Get("schedule.0.timezone").(string),
 	}
 
 	if err := setReportFrequency(report, d); err != nil {
