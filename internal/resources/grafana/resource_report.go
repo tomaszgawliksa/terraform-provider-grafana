@@ -5,21 +5,20 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
+	"time"
+
 	"github.com/go-openapi/strfmt"
 	"github.com/grafana/grafana-openapi-client-go/client"
 	"github.com/grafana/grafana-openapi-client-go/client/dashboards"
 	"github.com/grafana/grafana-openapi-client-go/client/reports"
 	"github.com/grafana/grafana-openapi-client-go/models"
-	"strconv"
-	"strings"
-	"time"
-
 	"github.com/hashicorp/go-cty/cty"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 
-	gapi "github.com/grafana/grafana-api-golang-client"
 	"github.com/grafana/terraform-provider-grafana/internal/common"
 )
 
@@ -572,108 +571,6 @@ func setReportFrequency(report *models.CreateOrUpdateConfigCmd, d *schema.Resour
 	}
 
 	return nil
-}
-
-func schemaToReport(client *gapi.Client, d *schema.ResourceData) (gapi.Report, error) {
-	id := int64(d.Get("dashboard_id").(int))
-	uid := d.Get("dashboard_uid").(string)
-	if uid == "" {
-		dashboards, err := client.DashboardsByIDs([]int64{id})
-		if err != nil {
-			return gapi.Report{}, fmt.Errorf("error getting dashboard %d: %v", id, err)
-		}
-		for _, dashboard := range dashboards {
-			if int64(dashboard.ID) == id {
-				uid = dashboard.UID
-				break
-			}
-		}
-		if uid == "" {
-			return gapi.Report{}, fmt.Errorf("dashboard %d not found", id)
-		}
-	}
-
-	frequency := d.Get("schedule.0.frequency").(string)
-	report := gapi.Report{
-		Dashboards: []gapi.ReportDashboard{
-			{
-				Dashboard: gapi.ReportDashboardIdentifier{
-					UID: uid,
-				},
-			},
-		},
-		Name:               d.Get("name").(string),
-		Recipients:         strings.Join(common.ListToStringSlice(d.Get("recipients").([]interface{})), ","),
-		ReplyTo:            d.Get("reply_to").(string),
-		Message:            d.Get("message").(string),
-		EnableDashboardURL: d.Get("include_dashboard_link").(bool),
-		EnableCSV:          d.Get("include_table_csv").(bool),
-		Options: gapi.ReportOptions{
-			Layout:      d.Get("layout").(string),
-			Orientation: d.Get("orientation").(string),
-		},
-		Schedule: gapi.ReportSchedule{
-			Frequency: frequency,
-			TimeZone:  "GMT",
-		},
-		Formats: []string{reportFormatPDF},
-	}
-
-	if v, ok := d.GetOk("formats"); ok && v != nil {
-		report.Formats = common.SetToStringSlice(v.(*schema.Set))
-	}
-
-	// Set dashboard time range
-	timeRange := d.Get("time_range").([]interface{})
-	if len(timeRange) > 0 {
-		timeRange := timeRange[0].(map[string]interface{})
-		report.Dashboards[0].TimeRange = gapi.ReportDashboardTimeRange{From: timeRange["from"].(string), To: timeRange["to"].(string)}
-	}
-
-	// Set schedule start time
-	if frequency != reportFrequencyNever {
-		if startTimeStr := d.Get("schedule.0.start_time").(string); startTimeStr != "" {
-			startDate, err := time.Parse(time.RFC3339, startTimeStr)
-			if err != nil {
-				return gapi.Report{}, err
-			}
-			startDate = startDate.UTC()
-			report.Schedule.StartDate = &startDate
-		}
-	}
-
-	// Set schedule end time
-	if frequency != reportFrequencyOnce && frequency != reportFrequencyNever {
-		if endTimeStr := d.Get("schedule.0.end_time").(string); endTimeStr != "" {
-			endDate, err := time.Parse(time.RFC3339, endTimeStr)
-			if err != nil {
-				return gapi.Report{}, err
-			}
-			endDate = endDate.UTC()
-			report.Schedule.EndDate = &endDate
-		}
-	}
-
-	if frequency == reportFrequencyMonthly {
-		if lastDayOfMonth := d.Get("schedule.0.last_day_of_month").(bool); lastDayOfMonth {
-			report.Schedule.DayOfMonth = "last"
-		}
-	}
-
-	if reportWorkdaysOnlyConfigAllowed(frequency) {
-		report.Schedule.WorkdaysOnly = d.Get("schedule.0.workdays_only").(bool)
-	}
-	if frequency == reportFrequencyCustom {
-		customInterval := d.Get("schedule.0.custom_interval").(string)
-		amount, unit, err := parseCustomReportInterval(customInterval)
-		if err != nil {
-			return gapi.Report{}, err
-		}
-		report.Schedule.IntervalAmount = int64(amount)
-		report.Schedule.IntervalFrequency = unit
-	}
-
-	return report, nil
 }
 
 func reportWorkdaysOnlyConfigAllowed(frequency string) bool {
