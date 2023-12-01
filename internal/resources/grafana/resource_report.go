@@ -496,7 +496,7 @@ func setDeprecatedDashboardValues(client *client.GrafanaHTTPAPI, report *models.
 
 	if uid != "" {
 		dashboard, err := client.Dashboards.GetDashboardByUID(&dashboards.GetDashboardByUIDParams{UID: uid})
-		if err == nil {
+		if err != nil {
 			return fmt.Errorf("error retrieving dashboard information: %s", err)
 		}
 		dashboardName = dashboard.Payload.Meta.Slug
