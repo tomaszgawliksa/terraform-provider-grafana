@@ -368,6 +368,7 @@ func ReadReport(ctx context.Context, d *schema.ResourceData, meta interface{}) d
 	d.Set("orientation", r.Payload.Options.Orientation)
 	d.Set("org_id", strconv.FormatInt(r.Payload.OrgID, 10))
 	d.Set("state", r.Payload.State)
+	d.Set("scale_factor", r.Payload.ScaleFactor)
 
 	if _, ok := d.GetOk("formats"); ok {
 		formats := make([]string, len(r.Payload.Formats))
