@@ -10,8 +10,6 @@ import (
 	"time"
 
 	"github.com/go-openapi/strfmt"
-	"github.com/grafana/grafana-openapi-client-go/client"
-	"github.com/grafana/grafana-openapi-client-go/client/dashboards"
 	"github.com/grafana/grafana-openapi-client-go/client/reports"
 	"github.com/grafana/grafana-openapi-client-go/models"
 	"github.com/hashicorp/go-cty/cty"
@@ -327,12 +325,13 @@ func ResourceReport() *schema.Resource {
 func CreateReport(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	client, orgID := OAPIClientFromNewOrgResource(meta, d)
 
-	req, err := schemaToReportParams(client, d)
+	req, err := schemaToReportParams(d)
 	if err != nil {
 		diag.FromErr(err)
 	}
 
 	params := reports.NewCreateReportParams().WithBody(req)
+
 	res, err := client.Reports.CreateReport(params)
 	if err != nil {
 		return diag.FromErr(err)
@@ -426,7 +425,7 @@ func UpdateReport(ctx context.Context, d *schema.ResourceData, meta interface{})
 		return diag.FromErr(err)
 	}
 
-	report, err := schemaToReportParams(client, d)
+	report, err := schemaToReportParams(d)
 	if err != nil {
 		return diag.FromErr(err)
 	}
@@ -454,13 +453,14 @@ func DeleteReport(ctx context.Context, d *schema.ResourceData, meta interface{})
 	return diag
 }
 
-func schemaToReportParams(client *client.GrafanaHTTPAPI, d *schema.ResourceData) (*models.CreateOrUpdateConfigCmd, error) {
+func schemaToReportParams(d *schema.ResourceData) (*models.CreateOrUpdateConfigCmd, error) {
 	report := createReportSchema(d)
-	dashboards, ok := d.Get("dashboards").([]*models.DashboardDTO)
-	if ok && len(dashboards) > 0 {
-		report.Dashboards = dashboards
+
+	dashboards := d.Get("dashboards").([]interface{})
+	if len(dashboards) > 0 {
+		//report.Dashboards = dashboards
 	} else {
-		if err := setDeprecatedDashboardValues(client, report, d); err != nil {
+		if err := setDeprecatedDashboardValues(report, d); err != nil {
 			return nil, err
 		}
 	}
@@ -479,7 +479,6 @@ func schemaToReportParams(client *client.GrafanaHTTPAPI, d *schema.ResourceData)
 
 func createReportSchema(d *schema.ResourceData) *models.CreateOrUpdateConfigCmd {
 	return &models.CreateOrUpdateConfigCmd{
-		DashboardID:        int64(d.Get("dashboard_id").(int)),
 		Name:               d.Get("name").(string),
 		EnableDashboardURL: d.Get("include_dashboard_link").(bool),
 		EnableCSV:          d.Get("include_table_csv").(bool),
@@ -499,41 +498,38 @@ func createReportSchema(d *schema.ResourceData) *models.CreateOrUpdateConfigCmd 
 	}
 }
 
-func setDeprecatedDashboardValues(client *client.GrafanaHTTPAPI, report *models.CreateOrUpdateConfigCmd, d *schema.ResourceData) error {
+func setDeprecatedDashboardValues(report *models.CreateOrUpdateConfigCmd, d *schema.ResourceData) error {
 	id := int64(d.Get("dashboard_id").(int))
 	uid := d.Get("dashboard_uid").(string)
-	dashboardName := ""
+
+	timeRange := d.Get("time_range").([]interface{})
+	timeRangeDTO := &models.TimeRangeDTO{}
+	if len(timeRange) > 0 {
+		tr := timeRange[0].(map[string]interface{})
+		timeRangeDTO = &models.TimeRangeDTO{
+			From: tr["from"].(string),
+			To:   tr["to"].(string),
+		}
+	}
 
 	if id == 0 && uid == "" {
 		return fmt.Errorf("dashboard_id or dashboard_uid should be set")
 	}
 
-	if uid != "" {
-		dashboard, err := client.Dashboards.GetDashboardByUID(&dashboards.GetDashboardByUIDParams{UID: uid})
-		if err != nil {
-			return fmt.Errorf("error retrieving dashboard information: %s", err)
-		}
-		dashboardName = dashboard.Payload.Meta.Slug
+	if uid == "" {
+		// We cannot retrieve dashboard by ID, so we set the old values into the deprecated fields.
+		report.DashboardID = id
+		report.Options.TimeRange = timeRangeDTO
+		report.TemplateVars = d.Get("template_vars")
+		return nil
 	}
 
 	report.Dashboards = []*models.DashboardDTO{
 		{
-			Dashboard: &models.DashboardReportDTO{
-				ID:   id,
-				UID:  uid,
-				Name: dashboardName,
-			},
+			Dashboard:       &models.DashboardReportDTO{UID: uid},
 			ReportVariables: d.Get("template_vars"),
+			TimeRange:       timeRangeDTO,
 		},
-	}
-
-	timeRange := d.Get("time_range").([]interface{})
-	if len(timeRange) > 0 {
-		tr := timeRange[0].(map[string]interface{})
-		report.Dashboards[0].TimeRange = &models.TimeRangeDTO{
-			From: tr["from"].(string),
-			To:   tr["to"].(string),
-		}
 	}
 
 	return nil
