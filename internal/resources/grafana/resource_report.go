@@ -464,8 +464,8 @@ func schemaToReportParams(client *client.GrafanaHTTPAPI, d *schema.ResourceData)
 		}
 	}
 
-	report.Formats = d.Get("formats").([]models.Type)
-	if len(report.Formats) == 0 {
+	formats := common.SetToStringSlice(d.Get("formats").(*schema.Set))
+	if len(formats) == 0 {
 		report.Formats = []models.Type{reportFormatPDF}
 	}
 
