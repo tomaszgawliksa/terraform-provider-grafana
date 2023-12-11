@@ -161,6 +161,13 @@ func ResourceReport() *schema.Resource {
 				Default:      reportStateScheduled,
 				ValidateFunc: validation.StringInSlice(states, false),
 			},
+			"scale_factor": {
+				Type:         schema.TypeInt,
+				Optional:     true,
+				Description:  "Zoom to enlarge the text or zoom out to see more data (like table columns)",
+				Default:      2,
+				ValidateFunc: validation.IntBetween(1, 3),
+			},
 			"time_range": {
 				Type:        schema.TypeList,
 				Optional:    true,
@@ -263,6 +270,7 @@ func ResourceReport() *schema.Resource {
 			"dashboards": {
 				Type:        schema.TypeList,
 				Description: "List of dashboards to be sent in the report",
+				Optional:    true,
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
 						"dashboard": {
@@ -270,10 +278,12 @@ func ResourceReport() *schema.Resource {
 							Description: "Dashboard information",
 							MinItems:    1,
 							MaxItems:    1,
+							Required:    true,
 							Elem: &schema.Resource{
 								Schema: map[string]*schema.Schema{
 									"uid": {
 										Type:        schema.TypeString,
+										Required:    true,
 										Description: "Dashboard UID",
 									},
 								},
@@ -288,12 +298,16 @@ func ResourceReport() *schema.Resource {
 							Elem: &schema.Resource{
 								Schema: map[string]*schema.Schema{
 									"from": {
-										Type:        schema.TypeString,
-										Description: "Start of the time range.",
+										Type:         schema.TypeString,
+										Optional:     true,
+										Description:  "Start of the time range.",
+										RequiredWith: []string{"time_range.0.to"},
 									},
 									"to": {
-										Type:        schema.TypeString,
-										Description: "End of the time range.",
+										Type:         schema.TypeString,
+										Optional:     true,
+										Description:  "End of the time range.",
+										RequiredWith: []string{"time_range.0.from"},
 									},
 								},
 							},
