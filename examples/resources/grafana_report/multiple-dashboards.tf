@@ -24,7 +24,6 @@ resource "grafana_report" "test" {
   schedule {
     frequency         = "monthly"
     last_day_of_month = true
-    timezone          = "America/Los_Angeles"
   }
   include_dashboard_link = true
   layout = "grid"
@@ -32,20 +31,18 @@ resource "grafana_report" "test" {
   scale_factor = 2
   state       = "scheduled"
   formats = ["pdf"]
-  dashboards {
-    dashboard {
+  dashboards = [
+    {
       uid = grafana_dashboard.test.uid
-    }
-    time_range {
-      from = "now-1h"
-      to   = "now"
-    }
-  }
-  dashboards {
-    dashboard {
+      time_range = {
+        from = "now-1h"
+        to   = "now"
+      }
+    },
+    {
       uid = grafana_dashboard.test2.uid
     }
-  }
+  ]
 }
 
 

@@ -254,12 +254,6 @@ func ResourceReport() *schema.Resource {
 							Description: "Send the report on the last day of the month",
 							Default:     false,
 						},
-						"timezone": {
-							Type:        schema.TypeString,
-							Optional:    true,
-							Description: "Schedule timezone",
-							Default:     "GMT",
-						},
 					},
 				},
 			},
@@ -269,21 +263,10 @@ func ResourceReport() *schema.Resource {
 				Optional:    true,
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
-						"dashboard": {
-							Type:        schema.TypeList,
-							Description: "Dashboard information",
-							MinItems:    1,
-							MaxItems:    1,
+						"uid": {
+							Type:        schema.TypeString,
 							Required:    true,
-							Elem: &schema.Resource{
-								Schema: map[string]*schema.Schema{
-									"uid": {
-										Type:        schema.TypeString,
-										Required:    true,
-										Description: "Dashboard UID",
-									},
-								},
-							},
+							Description: "Dashboard UID",
 						},
 						"time_range": {
 							Type:        schema.TypeList,
@@ -365,6 +348,7 @@ func ReadReport(ctx context.Context, d *schema.ResourceData, meta interface{}) d
 	d.Set("orientation", r.Payload.Options.Orientation)
 	d.Set("org_id", strconv.FormatInt(r.Payload.OrgID, 10))
 	d.Set("scale_factor", r.Payload.ScaleFactor)
+	d.Set("state", r.Payload.State)
 
 	if _, ok := d.GetOk("formats"); ok {
 		formats := make([]string, len(r.Payload.Formats))
@@ -493,7 +477,7 @@ func createReportSchema(d *schema.ResourceData) *models.CreateOrUpdateConfigCmd 
 		State:       models.State(d.Get("state").(string)),
 		Schedule: &models.ScheduleDTO{
 			Frequency: d.Get("schedule.0.frequency").(string),
-			TimeZone:  d.Get("schedule.0.timezone").(string),
+			TimeZone:  "GMT",
 		},
 	}
 }
@@ -501,15 +485,13 @@ func createReportSchema(d *schema.ResourceData) *models.CreateOrUpdateConfigCmd 
 func setDashboards(report *models.CreateOrUpdateConfigCmd, dashboards []interface{}) error {
 	report.Dashboards = make([]*models.DashboardDTO, len(dashboards))
 	for i, d := range dashboards {
-		dashboardDTO := d.(map[string]interface{})
-
-		dashboard := dashboardDTO["dashboard"].(map[string]interface{})
+		dashboard := d.(map[string]interface{})
 		report.Dashboards[i] = &models.DashboardDTO{
 			Dashboard:       &models.DashboardReportDTO{UID: dashboard["uid"].(string)},
-			ReportVariables: dashboardDTO["template_vars"],
+			ReportVariables: dashboard["template_vars"],
 		}
 
-		timeRange := dashboardDTO["time_range"].(map[string]interface{})
+		timeRange := dashboard["time_range"].(map[string]interface{})
 		if len(timeRange) > 0 {
 			report.Dashboards[i].TimeRange = &models.TimeRangeDTO{
 				From: timeRange["from"].(string),
@@ -548,7 +530,7 @@ func setDeprecatedDashboardValues(report *models.CreateOrUpdateConfigCmd, d *sch
 
 	report.Dashboards = []*models.DashboardDTO{
 		{
-			Dashboard:       &models.DashboardReportDTO{UID: uid},
+			Dashboard:       &models.DashboardReportDTO{ID: id, UID: uid},
 			ReportVariables: d.Get("template_vars"),
 			TimeRange:       timeRangeDTO,
 		},

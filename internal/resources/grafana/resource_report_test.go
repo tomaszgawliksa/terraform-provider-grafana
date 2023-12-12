@@ -113,7 +113,6 @@ func TestAccResourceReport_basic(t *testing.T) {
 					resource.TestCheckResourceAttr("grafana_report.test", "schedule.0.frequency", "monthly"),
 					resource.TestCheckResourceAttr("grafana_report.test", "schedule.0.end_time", ""), // No end time
 					resource.TestCheckResourceAttr("grafana_report.test", "schedule.0.last_day_of_month", "true"),
-					resource.TestCheckResourceAttr("grafana_report.test", "schedule.0.timezone", "America/Los_Angeles"),
 					resource.TestCheckResourceAttr("grafana_report.test", "orientation", "portrait"),
 					resource.TestCheckResourceAttr("grafana_report.test", "layout", "grid"),
 					resource.TestCheckResourceAttr("grafana_report.test", "include_dashboard_link", "true"),
@@ -124,7 +123,6 @@ func TestAccResourceReport_basic(t *testing.T) {
 					resource.TestCheckNoResourceAttr("grafana_report.test", "dashboards.1.dashboard.time_range"),
 					resource.TestCheckResourceAttr("grafana_report.test", "formats.#", "1"),
 					resource.TestCheckResourceAttr("grafana_report.test", "formats.0", "pdf"),
-					resource.TestCheckResourceAttr("grafana_report.test", "state", "expired"),
 				),
 			},
 		},
