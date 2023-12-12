@@ -80,20 +80,18 @@ func ResourceReport() *schema.Resource {
 				Description: "Name of the report.",
 			},
 			"dashboard_id": {
-				Type:         schema.TypeInt,
-				ExactlyOneOf: []string{"dashboard_id", "dashboard_uid"},
-				Computed:     true,
-				Optional:     true,
-				Deprecated:   "Use dashboard_uid instead",
-				Description:  "Dashboard to be sent in the report. This field is deprecated, use `dashboard_uid` instead.",
+				Type:        schema.TypeInt,
+				Computed:    true,
+				Optional:    true,
+				Deprecated:  "Use dashboard_uid instead",
+				Description: "Dashboard to be sent in the report. This field is deprecated, use `dashboard_uid` instead.",
 			},
 			"dashboard_uid": {
-				Type:         schema.TypeString,
-				ExactlyOneOf: []string{"dashboard_id", "dashboard_uid"},
-				Computed:     true,
-				Optional:     true,
-				Deprecated:   "Use dashboards instead",
-				Description:  "Dashboard to be sent in the report.",
+				Type:        schema.TypeString,
+				Computed:    true,
+				Optional:    true,
+				Deprecated:  "Use dashboards instead",
+				Description: "Dashboard to be sent in the report.",
 			},
 			"recipients": {
 				Type:        schema.TypeList,
@@ -366,7 +364,6 @@ func ReadReport(ctx context.Context, d *schema.ResourceData, meta interface{}) d
 	d.Set("layout", r.Payload.Options.Layout)
 	d.Set("orientation", r.Payload.Options.Orientation)
 	d.Set("org_id", strconv.FormatInt(r.Payload.OrgID, 10))
-	d.Set("state", r.Payload.State)
 	d.Set("scale_factor", r.Payload.ScaleFactor)
 
 	if _, ok := d.GetOk("formats"); ok {
@@ -400,14 +397,15 @@ func ReadReport(ctx context.Context, d *schema.ResourceData, meta interface{}) d
 		if err != nil {
 			return diag.FromErr(err)
 		}
-		schedule["start_time"] = t.UTC()
+
+		schedule["start_time"] = t.UTC().String()
 	}
 	if r.Payload.Schedule.EndDate.String() != "" {
 		t, err := time.Parse(time.RFC3339, r.Payload.Schedule.EndDate.String())
 		if err != nil {
 			return diag.FromErr(err)
 		}
-		schedule["end_time"] = t.UTC()
+		schedule["end_time"] = t.UTC().String()
 	}
 	if r.Payload.Schedule.DayOfMonth == "last" {
 		schedule["last_day_of_month"] = true
@@ -458,7 +456,9 @@ func schemaToReportParams(d *schema.ResourceData) (*models.CreateOrUpdateConfigC
 
 	dashboards := d.Get("dashboards").([]interface{})
 	if len(dashboards) > 0 {
-		//report.Dashboards = dashboards
+		if err := setDashboards(report, dashboards); err != nil {
+			return nil, err
+		}
 	} else {
 		if err := setDeprecatedDashboardValues(report, d); err != nil {
 			return nil, err
@@ -496,6 +496,28 @@ func createReportSchema(d *schema.ResourceData) *models.CreateOrUpdateConfigCmd 
 			TimeZone:  d.Get("schedule.0.timezone").(string),
 		},
 	}
+}
+
+func setDashboards(report *models.CreateOrUpdateConfigCmd, dashboards []interface{}) error {
+	report.Dashboards = make([]*models.DashboardDTO, len(dashboards))
+	for i, d := range dashboards {
+		dashboardDTO := d.(map[string]interface{})
+
+		dashboard := dashboardDTO["dashboard"].(map[string]interface{})
+		report.Dashboards[i] = &models.DashboardDTO{
+			Dashboard:       &models.DashboardReportDTO{UID: dashboard["uid"].(string)},
+			ReportVariables: dashboardDTO["template_vars"],
+		}
+
+		timeRange := dashboardDTO["time_range"].(map[string]interface{})
+		if len(timeRange) > 0 {
+			report.Dashboards[i].TimeRange = &models.TimeRangeDTO{
+				From: timeRange["from"].(string),
+				To:   timeRange["to"].(string),
+			}
+		}
+	}
+	return nil
 }
 
 func setDeprecatedDashboardValues(report *models.CreateOrUpdateConfigCmd, d *schema.ResourceData) error {
