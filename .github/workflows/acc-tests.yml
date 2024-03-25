@@ -53,7 +53,7 @@ jobs:
       fail-fast: false # Let all versions run, even if one fails
       matrix:
         # OSS tests, run on all versions
-        version: ['10.4.1', '10.3.4', '9.5.17', '8.5.27']
+        version: ['10.4.1', '10.3.5', '9.5.17', '8.5.27']
         type: ['oss']
         subset: ['basic', 'other', 'long']
         include:
