@@ -441,6 +441,7 @@ Optional:
 - `http` (Block Set, Max: 1) Settings for HTTP check. The target must be a URL (http or https). (see [below for nested schema](#nestedblock--settings--http))
 - `multihttp` (Block Set, Max: 1) Settings for MultiHTTP check. The target must be a URL (http or https) (see [below for nested schema](#nestedblock--settings--multihttp))
 - `ping` (Block Set, Max: 1) Settings for ping (ICMP) check. The target must be a valid hostname or IP address. (see [below for nested schema](#nestedblock--settings--ping))
+- `scripted` (Block Set, Max: 1) Settings for scripted check. The target can be any string that is a valid prometheus label value (see [below for nested schema](#nestedblock--settings--scripted))
 - `tcp` (Block Set, Max: 1) Settings for TCP check. The target must be of the form `<host>:<port>`, where the host portion must be a valid hostname or IP address. (see [below for nested schema](#nestedblock--settings--tcp))
 - `traceroute` (Block Set, Max: 1) Settings for traceroute check. The target must be a valid hostname or IP address (see [below for nested schema](#nestedblock--settings--traceroute))
 
@@ -662,6 +663,14 @@ Optional:
 - `source_ip_address` (String) Source IP address.
 
 
+<a id="nestedblock--settings--scripted"></a>
+### Nested Schema for `settings.scripted`
+
+Required:
+
+- `script` (String)
+
+
 <a id="nestedblock--settings--tcp"></a>
 ### Nested Schema for `settings.tcp`
 
@@ -707,6 +716,29 @@ Optional:
 - `max_hops` (Number) Maximum TTL for the trace Defaults to `64`.
 - `max_unknown_hops` (Number) Maximum number of hosts to travers that give no response Defaults to `15`.
 - `ptr_lookup` (Boolean) Reverse lookup hostnames from IP addresses Defaults to `true`.
+
+### Scripted Basic
+
+```terraform
+data "grafana_synthetic_monitoring_probes" "main" {}
+
+resource "grafana_synthetic_monitoring_check" "scripted" {
+  job     = "Scripted defaults"
+  target  = "scripted target"
+  enabled = false
+  probes = [
+    data.grafana_synthetic_monitoring_probes.main.probes.Atlanta,
+  ]
+  labels = {
+    foo = "bar"
+  }
+  settings {
+    scripted {
+      script = "console.log('Hello, world!')"
+    }
+  }
+}
+```
 
 ## Import
 

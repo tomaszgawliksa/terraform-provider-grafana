@@ -119,6 +119,23 @@ var (
 				MaxItems:    1,
 				Elem:        syntheticMonitoringCheckSettingsMultiHTTP,
 			},
+			"scripted": {
+				Description: "Settings for scripted check. The target can be any string that is a valid prometheus label value",
+				Type:        schema.TypeSet,
+				Optional:    true,
+				MaxItems:    1,
+				Elem:        syntheticMonitoringCheckSettingsScripted,
+			},
+		},
+	}
+
+	syntheticMonitoringCheckSettingsScripted = &schema.Resource{
+		Schema: map[string]*schema.Schema{
+			"script": {
+				Type:     schema.TypeString,
+				Optional: false,
+				Required: true,
+			},
 		},
 	}
 
@@ -687,7 +704,8 @@ multiple checks for a single endpoint to check different capabilities.
 				DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
 					// Suppress diff if it's a multihttp check with a timeout of 5000 (default timeout for those)
 					// and it's being changed to 3000 (default timeout set here).
-					if d.Get("settings.0.multihttp.0") != nil &&
+					doSuppress := d.Get("settings.0.multihttp.0") != nil || d.Get("settings.0.scripted") != nil
+					if doSuppress &&
 						old == strconv.Itoa(checkMultiHTTPDefaultTimeout) &&
 						new == strconv.Itoa(checkDefaultTimeout) {
 						return true
@@ -1054,6 +1072,14 @@ func resourceCheckRead(ctx context.Context, d *schema.ResourceData, c *smapi.Cli
 		settings.Add(map[string]any{
 			"multihttp": multiHTTP,
 		})
+	case chk.Settings.Scripted != nil:
+		scripted := schema.NewSet(
+			schema.HashResource(syntheticMonitoringCheckSettingsScripted),
+			[]any{},
+		)
+		settings.Add(map[string]any{
+			"scripted": scripted,
+		})
 	}
 
 	d.Set("settings", settings)
@@ -1114,7 +1140,7 @@ func makeCheck(d *schema.ResourceData) (*sm.Check, error) {
 	}
 
 	timeout := int64(d.Get("timeout").(int))
-	if timeout == checkDefaultTimeout && settings.Multihttp != nil {
+	if timeout == checkDefaultTimeout && (settings.Multihttp != nil || settings.Scripted != nil) {
 		timeout = checkMultiHTTPDefaultTimeout
 	}
 
@@ -1471,6 +1497,14 @@ func makeCheckSettings(settings map[string]interface{}) (sm.CheckSettings, error
 		err := makeMultiHTTPSettings(m, &cs)
 		if err != nil {
 			return cs, fmt.Errorf("invalid MultiHTTP settings: %w", err)
+		}
+	}
+
+	scripted := settings["scripted"].(*schema.Set).List()
+	if len(scripted) > 0 {
+		s := scripted[0].(map[string]interface{})
+		cs.Scripted = &sm.ScriptedSettings{
+			Script: []byte(s["script"].(string)),
 		}
 	}
 
