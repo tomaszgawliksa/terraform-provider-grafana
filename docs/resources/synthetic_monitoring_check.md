@@ -534,7 +534,7 @@ resource "grafana_synthetic_monitoring_check" "scripted" {
   target  = "scripted target"
   enabled = false
   probes = [
-    data.grafana_synthetic_monitoring_probes.main.probes.Atlanta,
+    data.grafana_synthetic_monitoring_probes.main.probes.Paris,
   ]
   labels = {
     foo = "bar"
