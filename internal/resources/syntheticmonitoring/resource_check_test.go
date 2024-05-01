@@ -382,7 +382,7 @@ func TestAccResourceCheck_scripted(t *testing.T) {
 					resource.TestCheckResourceAttrSet("grafana_synthetic_monitoring_check.scripted", "id"),
 					resource.TestCheckResourceAttrSet("grafana_synthetic_monitoring_check.scripted", "tenant_id"),
 					resource.TestCheckResourceAttr("grafana_synthetic_monitoring_check.scripted", "job", jobName),
-					resource.TestCheckResourceAttr("grafana_synthetic_monitoring_check.scripted", "target", "https://www.grafana-dev.com"),
+					resource.TestCheckResourceAttr("grafana_synthetic_monitoring_check.scripted", "target", "scripted target"),
 					resource.TestCheckResourceAttr("grafana_synthetic_monitoring_check.scripted", "timeout", "5000"), // scripted has a default timeout of 5000
 					resource.TestCheckResourceAttrSet("grafana_synthetic_monitoring_check.scripted", "probes.0"),
 					resource.TestCheckResourceAttr("grafana_synthetic_monitoring_check.scripted", "labels.foo", "bar"),
