@@ -1099,6 +1099,9 @@ func resourceCheckRead(ctx context.Context, d *schema.ResourceData, c *smapi.Cli
 			schema.HashResource(syntheticMonitoringCheckSettingsScripted),
 			[]any{},
 		)
+		scripted.Add(map[string]any{
+			"script": chk.Settings.Scripted.Script,
+		})
 		settings.Add(map[string]any{
 			"scripted": scripted,
 		})
