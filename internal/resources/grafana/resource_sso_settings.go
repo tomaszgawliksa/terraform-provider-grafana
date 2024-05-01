@@ -17,6 +17,7 @@ import (
 const (
 	providerKey       = "provider_name"
 	oauth2SettingsKey = "oauth2_settings"
+	samlSettingsKey   = "saml_settings"
 	customFieldsKey   = "custom"
 )
 
@@ -24,7 +25,7 @@ func resourceSSOSettings() *common.Resource {
 	schema := &schema.Resource{
 
 		Description: `
-Manages Grafana SSO Settings for OAuth2. SAML support will be added soon.
+Manages Grafana SSO Settings for OAuth2 and SAML. Support for SAML is currently in preview, it will be available in Grafana Enterprise starting with v11.1.
 
 * [Official documentation](https://grafana.com/docs/grafana/latest/setup-grafana/configure-security/configure-authentication/)
 * [HTTP API](https://grafana.com/docs/grafana/latest/developers/http_api/sso-settings/)
@@ -42,21 +43,31 @@ Manages Grafana SSO Settings for OAuth2. SAML support will be added soon.
 			providerKey: {
 				Type:         schema.TypeString,
 				Required:     true,
-				Description:  "The name of the SSO provider. Supported values: github, gitlab, google, azuread, okta, generic_oauth.",
-				ValidateFunc: validation.StringInSlice([]string{"github", "gitlab", "google", "azuread", "okta", "generic_oauth"}, false),
+				Description:  "The name of the SSO provider. Supported values: github, gitlab, google, azuread, okta, generic_oauth, saml.",
+				ValidateFunc: validation.StringInSlice([]string{"github", "gitlab", "google", "azuread", "okta", "generic_oauth", "saml"}, false),
 			},
 			oauth2SettingsKey: {
-				Type:        schema.TypeSet,
-				Required:    true,
-				MaxItems:    1,
-				MinItems:    1,
-				Description: "The SSO settings set.",
-				Elem:        oauth2SettingsSchema,
+				Type:          schema.TypeSet,
+				Optional:      true,
+				MaxItems:      1,
+				MinItems:      0,
+				Description:   "The OAuth2 settings set. Required for github, gitlab, google, azuread, okta, generic_oauth providers.",
+				Elem:          oauth2SettingsSchema,
+				ConflictsWith: []string{samlSettingsKey},
+			},
+			samlSettingsKey: {
+				Type:          schema.TypeSet,
+				Optional:      true,
+				MaxItems:      1,
+				MinItems:      0,
+				Description:   "The SAML settings set. Required for the saml provider.",
+				Elem:          samlSettingsSchema,
+				ConflictsWith: []string{oauth2SettingsKey},
 			},
 		},
 	}
 
-	return common.NewResource(
+	return common.NewLegacySDKResource(
 		"grafana_sso_settings",
 		orgResourceIDString("provider"),
 		schema,
@@ -263,15 +274,182 @@ var oauth2SettingsSchema = &schema.Resource{
 	},
 }
 
+var samlSettingsSchema = &schema.Resource{
+	Schema: map[string]*schema.Schema{
+		"enabled": {
+			Type:        schema.TypeBool,
+			Optional:    true,
+			Default:     true,
+			Description: "Define whether this configuration is enabled for SAML.",
+		},
+		"name": {
+			Type:        schema.TypeString,
+			Optional:    true,
+			Description: "Name used to refer to the SAML authentication.",
+		},
+		"single_logout": {
+			Type:        schema.TypeBool,
+			Optional:    true,
+			Description: "Whether SAML Single Logout is enabled.",
+		},
+		"allow_sign_up": {
+			Type:        schema.TypeBool,
+			Optional:    true,
+			Description: "Whether to allow new Grafana user creation through SAML login. If set to false, then only existing Grafana users can log in with SAML.",
+		},
+		"auto_login": {
+			Type:        schema.TypeBool,
+			Optional:    true,
+			Description: "Whether SAML auto login is enabled.",
+		},
+		"allow_idp_initiated": {
+			Type:        schema.TypeBool,
+			Optional:    true,
+			Description: "Whether SAML IdP-initiated login is allowed.",
+		},
+		"certificate": {
+			Type:        schema.TypeString,
+			Optional:    true,
+			Sensitive:   true,
+			Description: "Base64-encoded string for the SP X.509 certificate.",
+		},
+		"certificate_path": {
+			Type:        schema.TypeString,
+			Optional:    true,
+			Description: "Path for the SP X.509 certificate.",
+		},
+		"private_key": {
+			Type:        schema.TypeString,
+			Optional:    true,
+			Sensitive:   true,
+			Description: "Base64-encoded string for the SP private key.",
+		},
+		"private_key_path": {
+			Type:        schema.TypeString,
+			Optional:    true,
+			Description: "Path for the SP private key.",
+		},
+		"signature_algorithm": {
+			Type:        schema.TypeString,
+			Optional:    true,
+			Description: "Signature algorithm used for signing requests to the IdP. Supported values are rsa-sha1, rsa-sha256, rsa-sha512.",
+		},
+		"idp_metadata": {
+			Type:        schema.TypeString,
+			Optional:    true,
+			Description: "Base64-encoded string for the IdP SAML metadata XML.",
+		},
+		"idp_metadata_path": {
+			Type:        schema.TypeString,
+			Optional:    true,
+			Description: "Path for the IdP SAML metadata XML.",
+		},
+		"idp_metadata_url": {
+			Type:        schema.TypeString,
+			Optional:    true,
+			Description: "URL for the IdP SAML metadata XML.",
+		},
+		"max_issue_delay": {
+			Type:        schema.TypeString,
+			Optional:    true,
+			Description: "Duration, since the IdP issued a response and the SP is allowed to process it. For example: 90s, 1h.",
+		},
+		"metadata_valid_duration": {
+			Type:        schema.TypeString,
+			Optional:    true,
+			Description: "Duration, for how long the SP metadata is valid. For example: 48h, 5d.",
+		},
+		"relay_state": {
+			Type:        schema.TypeString,
+			Optional:    true,
+			Description: "Relay state for IdP-initiated login. Should match relay state configured in IdP.",
+		},
+		"assertion_attribute_name": {
+			Type:        schema.TypeString,
+			Optional:    true,
+			Description: "Friendly name or name of the attribute within the SAML assertion to use as the user name. Alternatively, this can be a template with variables that match the names of attributes within the SAML assertion.",
+		},
+		"assertion_attribute_login": {
+			Type:        schema.TypeString,
+			Optional:    true,
+			Description: "Friendly name or name of the attribute within the SAML assertion to use as the user login handle.",
+		},
+		"assertion_attribute_email": {
+			Type:        schema.TypeString,
+			Optional:    true,
+			Description: "Friendly name or name of the attribute within the SAML assertion to use as the user email.",
+		},
+		"assertion_attribute_groups": {
+			Type:        schema.TypeString,
+			Optional:    true,
+			Description: "Friendly name or name of the attribute within the SAML assertion to use as the user groups.",
+		},
+		"assertion_attribute_role": {
+			Type:        schema.TypeString,
+			Optional:    true,
+			Description: "Friendly name or name of the attribute within the SAML assertion to use as the user roles.",
+		},
+		"assertion_attribute_org": {
+			Type:        schema.TypeString,
+			Optional:    true,
+			Description: "Friendly name or name of the attribute within the SAML assertion to use as the user organization.",
+		},
+		"allowed_organizations": {
+			Type:        schema.TypeString,
+			Optional:    true,
+			Description: "List of comma- or space-separated organizations. User should be a member of at least one organization to log in.",
+		},
+		"org_mapping": {
+			Type:        schema.TypeString,
+			Optional:    true,
+			Description: "List of comma- or space-separated Organization:OrgId:Role mappings. Organization can be * meaning “All users”. Role is optional and can have the following values: Viewer, Editor or Admin.",
+		},
+		"role_values_none": {
+			Type:        schema.TypeString,
+			Optional:    true,
+			Description: "List of comma- or space-separated roles which will be mapped into the None role.",
+		},
+		"role_values_editor": {
+			Type:        schema.TypeString,
+			Optional:    true,
+			Description: "List of comma- or space-separated roles which will be mapped into the Editor role.",
+		},
+		"role_values_admin": {
+			Type:        schema.TypeString,
+			Optional:    true,
+			Description: "List of comma- or space-separated roles which will be mapped into the Admin role.",
+		},
+		"role_values_grafana_admin": {
+			Type:        schema.TypeString,
+			Optional:    true,
+			Description: "List of comma- or space-separated roles which will be mapped into the Grafana Admin (Super Admin) role.",
+		},
+		"name_id_format": {
+			Type:        schema.TypeString,
+			Optional:    true,
+			Description: "The Name ID Format to request within the SAML assertion. Defaults to urn:oasis:names:tc:SAML:2.0:nameid-format:transient",
+		},
+		"skip_org_role_sync": {
+			Type:        schema.TypeBool,
+			Optional:    true,
+			Description: "Prevent synchronizing users’ organization roles from your IdP.",
+		},
+	},
+}
+
 func ReadSSOSettings(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	client, _ := OAPIGlobalClient(meta) // TODO: Check error. This resource works with a token. Is it org-scoped?
 
 	provider := d.Id()
 
-	// only one of oauth2, saml, ldap settings can be provided in a resource
-	// currently we implemented only the oauth2 settings
-	settingsKey := oauth2SettingsKey
-	settingsSchema := oauth2SettingsSchema
+	settingsKey, err := getSettingsKey(provider)
+	if err != nil {
+		return diag.FromErr(err)
+	}
+	settingsSchema, err := getSettingsSchema(provider)
+	if err != nil {
+		return diag.FromErr(err)
+	}
 
 	resp, err := client.SsoSettings.GetProviderSettings(provider)
 	if err != nil {
@@ -293,28 +471,37 @@ func ReadSSOSettings(ctx context.Context, d *schema.ResourceData, meta interface
 
 	settingsSnake := make(map[string]any)
 
-	if _, ok := settingsSnake[customFieldsKey]; !ok {
-		settingsSnake[customFieldsKey] = make(map[string]any)
+	if isOAuth2Provider(provider) {
+		if _, ok := settingsSnake[customFieldsKey]; !ok {
+			settingsSnake[customFieldsKey] = make(map[string]any)
+		}
 	}
 
 	for k, v := range payload.Settings.(map[string]any) {
 		key := toSnake(k)
 
 		if _, ok := settingsSchema.Schema[key]; ok {
-			if isSecret(key) {
-				// secrets are not exposed by the SSO Settings API, we get them from the terraform state
-				if val, ok := settingsFromTfState[key]; ok {
+			val, ok := getSettingOk(key, settingsFromTfState)
+
+			// If the terraform state is empty we return all settings from the API, this is useful when
+			// importing existing sso settings into terraform. Otherwise, the API response may return fields
+			// that don't exist in the terraform state. We ignore them because they are not managed by terraform.
+			if ok || len(settingsFromTfState) == 0 {
+				if isSecret(key) {
+					// secrets are not exposed by the SSO Settings API, we get them from the terraform state
 					settingsSnake[key] = val
+				} else if !isIgnored(provider, key) {
+					// some fields are returned by the API, but they are read only, so we ignore them
+					settingsSnake[key] = v
 				}
-			} else if !isIgnored(provider, key) {
-				// some fields cannot be updated, but they are returned by the API, so we ignore them
-				settingsSnake[key] = v
 			}
-		} else if _, ok := customFieldsFromTfState[key]; ok {
-			settingsSnake[customFieldsKey].(map[string]any)[key] = v
-		} else if _, ok := customFieldsFromTfState[k]; ok {
-			// for covering the case when a custom field name is in camelCase
-			settingsSnake[customFieldsKey].(map[string]any)[k] = v
+		} else if isOAuth2Provider(provider) {
+			if _, ok := customFieldsFromTfState[key]; ok {
+				settingsSnake[customFieldsKey].(map[string]any)[key] = v
+			} else if _, ok := customFieldsFromTfState[k]; ok {
+				// for covering the case when a custom field name is in camelCase
+				settingsSnake[customFieldsKey].(map[string]any)[k] = v
+			}
 		}
 	}
 
@@ -332,25 +519,28 @@ func UpdateSSOSettings(ctx context.Context, d *schema.ResourceData, meta interfa
 
 	provider := d.Get(providerKey).(string)
 
-	// only one of oauth2, saml, ldap settings can be provided in a resource
-	// currently we implemented only the oauth2 settings
-	settingsKey := oauth2SettingsKey
+	settingsKey, err := getSettingsKey(provider)
+	if err != nil {
+		return diag.FromErr(err)
+	}
 
 	settings, err := getSettingsFromResourceData(d, settingsKey)
 	if err != nil {
 		return diag.FromErr(err)
 	}
 
-	diags := validateCustomFields(settings)
-	if diags != nil {
-		return diags
-	}
+	if isOAuth2Provider(provider) {
+		diags := validateOAuth2CustomFields(settings)
+		if diags != nil {
+			return diags
+		}
 
-	settings = mergeCustomFields(settings)
+		settings = mergeCustomFields(settings)
 
-	err = validateOAuth2Settings(provider, settings)
-	if err != nil {
-		return diag.FromErr(err)
+		err = validateOAuth2Settings(provider, settings)
+		if err != nil {
+			return diag.FromErr(err)
+		}
 	}
 
 	ssoSettings := models.UpdateProviderSettingsParamsBody{
@@ -380,6 +570,54 @@ func DeleteSSOSettings(ctx context.Context, d *schema.ResourceData, meta interfa
 	return nil
 }
 
+func isOAuth2Provider(provider string) bool {
+	switch provider {
+	case "github", "gitlab", "google", "azuread", "okta", "generic_oauth":
+		return true
+	}
+	return false
+}
+
+func isSamlProvider(provider string) bool {
+	return provider == "saml"
+}
+
+func getSettingsKey(provider string) (string, error) {
+	if isOAuth2Provider(provider) {
+		return oauth2SettingsKey, nil
+	}
+	if isSamlProvider(provider) {
+		return samlSettingsKey, nil
+	}
+
+	return "", fmt.Errorf("no settings key found for provider %s", provider)
+}
+
+func getSettingsSchema(provider string) (*schema.Resource, error) {
+	if isOAuth2Provider(provider) {
+		return oauth2SettingsSchema, nil
+	}
+	if isSamlProvider(provider) {
+		return samlSettingsSchema, nil
+	}
+
+	return nil, fmt.Errorf("no settings schema found for provider %s", provider)
+}
+
+// getSettingOk mimics the terraform function schema.ResourceData.GetOk but for the nested fields inside settings
+// it assumes that any empty string value from settings is not part of the tf configuration
+func getSettingOk(key string, settings map[string]any) (any, bool) {
+	val, ok := settings[key]
+	if ok {
+		stringVal, stringOk := val.(string)
+		if stringOk && stringVal == "" {
+			return val, false
+		}
+	}
+
+	return val, ok
+}
+
 func getSettingsFromResourceData(d *schema.ResourceData, settingsKey string) (map[string]any, error) {
 	settingsList := d.Get(settingsKey).(*schema.Set).List()
 
@@ -389,10 +627,12 @@ func getSettingsFromResourceData(d *schema.ResourceData, settingsKey string) (ma
 
 	// TODO investigate why we need this
 	// sometimes the settings set contains some empty items that we want to ignore
-	// we are only interested in the settings that have the client_id set because the client_id is a required field
+	// we are only interested in the settings that have one of the following:
+	// - the client_id set because the client_id is a required field for OAuth2 providers
+	// - the private_key or private_key_path set because those are required fields for SAML
 	for _, item := range settingsList {
 		settings := item.(map[string]any)
-		if settings["client_id"] != "" {
+		if settings["client_id"] != "" || settings["private_key"] != "" || settings["private_key_path"] != "" {
 			return settings, nil
 		}
 	}
@@ -400,40 +640,55 @@ func getSettingsFromResourceData(d *schema.ResourceData, settingsKey string) (ma
 	return nil, fmt.Errorf("no valid settings found for the provider %s", d.Get(providerKey).(string))
 }
 
-func validateOAuth2Settings(provider string, settings map[string]any) error {
-	authURL := settings["auth_url"].(string)
-	tokenURL := settings["token_url"].(string)
-	apiURL := settings["api_url"].(string)
+type validateFunc func(settingsMap map[string]any, provider string) error
 
-	switch provider {
-	case "github", "gitlab", "google":
-		if authURL != "" {
-			return fmt.Errorf("auth_url must be empty for the provider %s", provider)
-		}
-		if tokenURL != "" {
-			return fmt.Errorf("token_url must be empty for the provider %s", provider)
-		}
-		if apiURL != "" {
-			return fmt.Errorf("api_url must be empty for the provider %s", provider)
-		}
-	case "azuread", "generic_oauth", "okta":
-		if authURL == "" {
-			return fmt.Errorf("auth_url must be set for the provider %s", provider)
-		}
-		if !isValidURL(authURL) {
-			return fmt.Errorf("auth_url must be a valid http/https URL")
-		}
-		if tokenURL == "" {
-			return fmt.Errorf("token_url must be set for the provider %s", provider)
-		}
-		if !isValidURL(tokenURL) {
-			return fmt.Errorf("token_url must be a valid http/https URL")
-		}
-		if apiURL == "" {
-			return fmt.Errorf("api_url must be set for the provider %s", provider)
-		}
-		if !isValidURL(apiURL) {
-			return fmt.Errorf("api_url must be a valid http/https URL")
+var validationsByProvider = map[string][]validateFunc{
+	"azuread": {
+		ssoValidateNotEmpty("auth_url"),
+		ssoValidateNotEmpty("token_url"),
+		ssoValidateEmpty("api_url"),
+		ssoValidateURL("auth_url"),
+		ssoValidateURL("token_url"),
+	},
+	"generic_oauth": {
+		ssoValidateNotEmpty("auth_url"),
+		ssoValidateNotEmpty("token_url"),
+		ssoValidateNotEmpty("api_url"),
+		ssoValidateURL("auth_url"),
+		ssoValidateURL("token_url"),
+		ssoValidateURL("api_url"),
+	},
+	"okta": {
+		ssoValidateNotEmpty("auth_url"),
+		ssoValidateNotEmpty("token_url"),
+		ssoValidateNotEmpty("api_url"),
+		ssoValidateURL("auth_url"),
+		ssoValidateURL("token_url"),
+		ssoValidateURL("api_url"),
+	},
+	"github": {
+		ssoValidateEmpty("auth_url"),
+		ssoValidateEmpty("token_url"),
+		ssoValidateEmpty("api_url"),
+	},
+	"gitlab": {
+		ssoValidateEmpty("auth_url"),
+		ssoValidateEmpty("token_url"),
+		ssoValidateEmpty("api_url"),
+	},
+	"google": {
+		ssoValidateEmpty("auth_url"),
+		ssoValidateEmpty("token_url"),
+		ssoValidateEmpty("api_url"),
+	},
+}
+
+func validateOAuth2Settings(provider string, settings map[string]any) error {
+	validators := validationsByProvider[provider]
+	for _, validateF := range validators {
+		err := validateF(settings, provider)
+		if err != nil {
+			return err
 		}
 	}
 
@@ -491,7 +746,7 @@ func toSnake(s string) string {
 }
 
 func isSecret(fieldName string) bool {
-	secretFieldPatterns := []string{"secret"}
+	secretFieldPatterns := []string{"secret", "certificate", "private"}
 
 	for _, v := range secretFieldPatterns {
 		if strings.Contains(strings.ToLower(fieldName), strings.ToLower(v)) {
@@ -501,7 +756,7 @@ func isSecret(fieldName string) bool {
 	return false
 }
 
-func validateCustomFields(settings map[string]any) diag.Diagnostics {
+func validateOAuth2CustomFields(settings map[string]any) diag.Diagnostics {
 	for key := range settings[customFieldsKey].(map[string]any) {
 		if _, ok := oauth2SettingsSchema.Schema[key]; ok {
 			return diag.Errorf("Invalid custom field %s, the field is already defined in the settings schema", key)
@@ -544,4 +799,33 @@ func isValidURL(actual string) bool {
 		return false
 	}
 	return strings.HasPrefix(parsed.Scheme, "http") && parsed.Host != ""
+}
+
+func ssoValidateNotEmpty(key string) validateFunc {
+	return func(settingsMap map[string]any, provider string) error {
+		if settingsMap[key] == "" {
+			return fmt.Errorf("%s must be set for the provider %s", key, provider)
+		}
+
+		return nil
+	}
+}
+
+func ssoValidateEmpty(key string) validateFunc {
+	return func(settingsMap map[string]any, provider string) error {
+		if settingsMap[key].(string) != "" {
+			return fmt.Errorf("%s must be empty for the provider %s", key, provider)
+		}
+
+		return nil
+	}
+}
+
+func ssoValidateURL(key string) validateFunc {
+	return func(settingsMap map[string]any, provider string) error {
+		if !isValidURL(settingsMap[key].(string)) {
+			return fmt.Errorf("%s must be a valid http/https URL for the provider %s", key, provider)
+		}
+		return nil
+	}
 }

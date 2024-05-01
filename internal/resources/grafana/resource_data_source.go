@@ -13,6 +13,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/structure"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 
+	goapi "github.com/grafana/grafana-openapi-client-go/client"
 	"github.com/grafana/grafana-openapi-client-go/models"
 	"github.com/grafana/terraform-provider-grafana/v2/internal/common"
 )
@@ -108,11 +109,11 @@ source selected (via the 'type' argument).
 		},
 	}
 
-	return common.NewResource(
+	return common.NewLegacySDKResource(
 		"grafana_data_source",
 		orgResourceIDString("uid"),
 		schema,
-	)
+	).WithLister(listerFunction(listDatasources))
 }
 
 func datasourceHTTPHeadersAttribute() *schema.Schema {
@@ -180,6 +181,28 @@ func datasourceSecureJSONDataAttribute() *schema.Schema {
 	}
 }
 
+func listDatasources(ctx context.Context, client *goapi.GrafanaHTTPAPI, data *ListerData) ([]string, error) {
+	orgIDs, err := data.OrgIDs(client)
+	if err != nil {
+		return nil, err
+	}
+
+	var ids []string
+	for _, orgID := range orgIDs {
+		client = client.Clone().WithOrgID(orgID)
+		resp, err := client.Datasources.GetDataSources()
+		if err != nil {
+			return nil, err
+		}
+
+		for _, ds := range resp.Payload {
+			ids = append(ids, MakeOrgResourceID(orgID, ds.UID))
+		}
+	}
+
+	return ids, nil
+}
+
 // CreateDataSource creates a Grafana datasource
 func CreateDataSource(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	client, orgID := OAPIClientFromNewOrgResource(meta, d)
@@ -194,8 +217,7 @@ func CreateDataSource(ctx context.Context, d *schema.ResourceData, meta interfac
 		return diag.FromErr(err)
 	}
 
-	// TODO: Switch to UID
-	d.SetId(MakeOrgResourceID(orgID, resp.Payload.Datasource.ID))
+	d.SetId(MakeOrgResourceID(orgID, resp.Payload.Datasource.UID))
 	return ReadDataSource(ctx, d, meta)
 }
 
@@ -222,7 +244,7 @@ func UpdateDataSource(ctx context.Context, d *schema.ResourceData, meta interfac
 		User:            dataSource.User,
 		WithCredentials: dataSource.WithCredentials,
 	}
-	_, err = client.Datasources.UpdateDataSourceByID(idStr, &body)
+	_, err = client.Datasources.UpdateDataSourceByUID(idStr, &body)
 
 	return diag.FromErr(err)
 }
@@ -231,34 +253,25 @@ func UpdateDataSource(ctx context.Context, d *schema.ResourceData, meta interfac
 func ReadDataSource(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	client, _, idStr := OAPIClientFromExistingOrgResource(meta, d.Id())
 
-	var resp interface{ GetPayload() *models.DataSource }
-	var err error
-	// Support both numerical and UID IDs, so that we can import an existing datasource with either.
-	// Following the read, it's normalized to a numerical ID.
-	if _, parseErr := strconv.ParseInt(idStr, 10, 64); parseErr == nil {
-		resp, err = client.Datasources.GetDataSourceByID(idStr)
-	} else {
-		resp, err = client.Datasources.GetDataSourceByUID(idStr)
-	}
-
+	ds, err := getDatasourceByUIDOrID(client, idStr)
 	if err, shouldReturn := common.CheckReadError("datasource", d, err); shouldReturn {
 		return err
 	}
 
-	return datasourceToState(d, resp.GetPayload())
+	return datasourceToState(d, ds)
 }
 
 // DeleteDataSource deletes a Grafana datasource
 func DeleteDataSource(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	client, _, idStr := OAPIClientFromExistingOrgResource(meta, d.Id())
 
-	_, err := client.Datasources.DeleteDataSourceByID(idStr)
+	_, err := client.Datasources.DeleteDataSourceByUID(idStr)
 	diag, _ := common.CheckReadError("datasource", d, err)
 	return diag
 }
 
 func datasourceToState(d *schema.ResourceData, dataSource *models.DataSource) diag.Diagnostics {
-	d.SetId(MakeOrgResourceID(dataSource.OrgID, dataSource.ID))
+	d.SetId(MakeOrgResourceID(dataSource.OrgID, dataSource.UID))
 	d.Set("access_mode", dataSource.Access)
 	d.Set("database_name", dataSource.Database)
 	d.Set("is_default", dataSource.IsDefault)
@@ -396,4 +409,24 @@ func removeHeadersFromJSONData(input map[string]interface{}) (map[string]interfa
 	}
 
 	return jsonData, headers
+}
+
+// Support both numerical and UID IDs, so that we can import an existing datasource with either.
+// Following the read, it's normalized to a UID.
+// TODO: Remove on next major version
+func getDatasourceByUIDOrID(client *goapi.GrafanaHTTPAPI, id string) (*models.DataSource, error) {
+	var resp interface{ GetPayload() *models.DataSource }
+	var err error
+
+	if _, parseErr := strconv.ParseInt(id, 10, 64); parseErr == nil {
+		resp, err = client.Datasources.GetDataSourceByID(id)
+	} else {
+		resp, err = client.Datasources.GetDataSourceByUID(id)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	return resp.GetPayload(), nil
 }

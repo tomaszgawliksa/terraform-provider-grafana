@@ -10,6 +10,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 
+	goapi "github.com/grafana/grafana-openapi-client-go/client"
+	"github.com/grafana/grafana-openapi-client-go/client/search"
 	"github.com/grafana/grafana-openapi-client-go/models"
 	"github.com/grafana/terraform-provider-grafana/v2/internal/common"
 )
@@ -92,11 +94,38 @@ Manages Grafana dashboards.
 		SchemaVersion: 1, // The state upgrader was removed in v2. To upgrade, users can first upgrade to the last v1 release, apply, then upgrade to v2.
 	}
 
-	return common.NewResource(
+	return common.NewLegacySDKResource(
 		"grafana_dashboard",
 		orgResourceIDString("uid"),
 		schema,
-	)
+	).WithLister(listerFunction(listDashboards))
+}
+
+func listDashboards(ctx context.Context, client *goapi.GrafanaHTTPAPI, data *ListerData) ([]string, error) {
+	return listDashboardOrFolder(client, data, "dash-db")
+}
+
+func listDashboardOrFolder(client *goapi.GrafanaHTTPAPI, data *ListerData, searchType string) ([]string, error) {
+	orgIDs, err := data.OrgIDs(client)
+	if err != nil {
+		return nil, err
+	}
+
+	uids := []string{}
+	for _, orgID := range orgIDs {
+		client = client.Clone().WithOrgID(orgID)
+
+		resp, err := client.Search.Search(search.NewSearchParams().WithType(common.Ref(searchType)))
+		if err != nil {
+			return nil, err
+		}
+
+		for _, item := range resp.Payload {
+			uids = append(uids, MakeOrgResourceID(orgID, item.UID))
+		}
+	}
+
+	return uids, nil
 }
 
 func CreateDashboard(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
@@ -135,7 +164,10 @@ func ReadDashboard(ctx context.Context, d *schema.ResourceData, meta interface{}
 	// If the folder was originally set to a numeric ID, we read the folder ID
 	// Othwerwise, we read the folder UID
 	_, folderID := SplitOrgResourceID(d.Get("folder").(string))
+	// nolint:staticcheck
 	if common.IDRegexp.MatchString(folderID) && dashboard.Meta.FolderID > 0 {
+		// TODO: Remove on next major release
+		// nolint:staticcheck
 		d.Set("folder", strconv.FormatInt(dashboard.Meta.FolderID, 10))
 	} else {
 		d.Set("folder", dashboard.Meta.FolderUID)
@@ -205,6 +237,8 @@ func makeDashboard(d *schema.ResourceData) (models.SaveDashboardCommand, error) 
 
 	_, folderID := SplitOrgResourceID(d.Get("folder").(string))
 	if folderInt, err := strconv.ParseInt(folderID, 10, 64); err == nil {
+		// TODO: Remove on next major release
+		// nolint:staticcheck
 		dashboard.FolderID = folderInt
 	} else {
 		dashboard.FolderUID = folderID

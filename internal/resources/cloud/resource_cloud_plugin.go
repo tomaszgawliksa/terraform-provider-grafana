@@ -59,11 +59,31 @@ Required access policy scopes:
 		},
 	}
 
-	return common.NewResource(
+	return common.NewLegacySDKResource(
 		"grafana_cloud_plugin_installation",
 		resourcePluginInstallationID,
 		schema,
-	)
+	).WithLister(cloudListerFunction(listStackPlugins))
+}
+
+func listStackPlugins(ctx context.Context, client *gcom.APIClient, data *ListerData) ([]string, error) {
+	stacks, err := data.Stacks(ctx, client)
+	if err != nil {
+		return nil, err
+	}
+
+	var pluginIDs []string
+	for _, stack := range stacks {
+		plugins, _, err := client.InstancesAPI.GetInstancePlugins(ctx, stack.Slug).Execute()
+		if err != nil {
+			return nil, err
+		}
+		for _, plugin := range plugins.Items {
+			pluginIDs = append(pluginIDs, resourcePluginInstallationID.Make(stack.Slug, plugin.PluginSlug))
+		}
+	}
+
+	return pluginIDs, nil
 }
 
 func resourcePluginInstallationCreate(ctx context.Context, d *schema.ResourceData, client *gcom.APIClient) diag.Diagnostics {

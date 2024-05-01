@@ -10,7 +10,7 @@ import (
 )
 
 func grafanaClientResourceValidation(d *schema.ResourceData, m interface{}) error {
-	if m.(*common.Client).GrafanaOAPI == nil {
+	if m.(*common.Client).GrafanaAPI == nil {
 		return fmt.Errorf("the Grafana client is required for this resource. Set the auth and url provider attributes")
 	}
 	return nil
@@ -26,6 +26,9 @@ func grafanaOrgIDResourceValidation(d *schema.ResourceData, m interface{}) error
 }
 
 func addValidationToSchema(r *schema.Resource) {
+	if r == nil {
+		return
+	}
 	createFn := r.CreateContext
 	readFn := r.ReadContext
 	updateFn := r.UpdateContext
@@ -98,6 +101,11 @@ var DatasourcesMap = addValidationToMap(map[string]*schema.Resource{
 })
 
 var Resources = addValidationToList([]*common.Resource{
+	makeResourceFolderPermissionItem(),
+	makeResourceDashboardPermissionItem(),
+	makeResourceDatasourcePermissionItem(),
+	makeResourceRoleAssignmentItem(),
+	makeResourceServiceAccountPermissionItem(),
 	resourceAnnotation(),
 	resourceAPIKey(),
 	resourceContactPoint(),

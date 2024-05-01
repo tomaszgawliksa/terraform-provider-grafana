@@ -52,11 +52,19 @@ description: |-
 
 {{ tffile "examples/resources/grafana_synthetic_monitoring_check/traceroute_complex.tf" }}
 
-{{ .SchemaMarkdown | trimspace }}
+### MultiHTTP Basic
+
+{{ tffile "examples/resources/grafana_synthetic_monitoring_check/multihttp_basic.tf" }}
+
+### MultiHTTP Complex
+
+{{ tffile "examples/resources/grafana_synthetic_monitoring_check/multihttp_complex.tf" }} 
 
 ### Scripted Basic
 
 {{ tffile "examples/resources/grafana_synthetic_monitoring_check/scripted_basic.tf" }}
+
+{{ .SchemaMarkdown | trimspace }}
 
 ## Import
 

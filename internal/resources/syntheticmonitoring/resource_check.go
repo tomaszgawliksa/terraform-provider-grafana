@@ -654,7 +654,7 @@ target for checks can be a domain name, a server, or a website, depending on
 what information you would like to gather about your endpoint. You can define
 multiple checks for a single endpoint to check different capabilities.
 
-* [Official documentation](https://grafana.com/docs/grafana-cloud/monitor-public-endpoints/create-checks/checks/)
+* [Official documentation](https://grafana.com/docs/grafana-cloud/testing/synthetic-monitoring/create-checks/checks/)
 `,
 
 		CreateContext: withClient[schema.CreateContextFunc](resourceCheckCreate),
@@ -721,7 +721,7 @@ multiple checks for a single endpoint to check different capabilities.
 				Default:     true,
 			},
 			"alert_sensitivity": {
-				Description: "Can be set to `none`, `low`, `medium`, or `high` to correspond to the check [alert levels](https://grafana.com/docs/grafana-cloud/monitor-public-endpoints/configure-alerts/synthetic-monitoring-alerting/).",
+				Description: "Can be set to `none`, `low`, `medium`, or `high` to correspond to the check [alert levels](https://grafana.com/docs/grafana-cloud/testing/synthetic-monitoring/configure-alerts/synthetic-monitoring-alerting/).",
 				Type:        schema.TypeString,
 				Optional:    true,
 				Default:     "none",
@@ -762,7 +762,29 @@ multiple checks for a single endpoint to check different capabilities.
 		},
 	}
 
-	return common.NewResource("grafana_synthetic_monitoring_check", resourceCheckID, schema)
+	return common.NewLegacySDKResource(
+		"grafana_synthetic_monitoring_check",
+		resourceCheckID,
+		schema,
+	).WithLister(listChecks)
+}
+
+func listChecks(ctx context.Context, client *common.Client, data any) ([]string, error) {
+	smClient := client.SMAPI
+	if smClient == nil {
+		return nil, fmt.Errorf("client not configured for SM API")
+	}
+
+	checkList, err := smClient.ListChecks(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var ids []string
+	for _, check := range checkList {
+		ids = append(ids, strconv.FormatInt(check.Id, 10))
+	}
+	return ids, nil
 }
 
 func resourceCheckCreate(ctx context.Context, d *schema.ResourceData, c *smapi.Client) diag.Diagnostics {

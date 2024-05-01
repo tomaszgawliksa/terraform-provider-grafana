@@ -2,10 +2,12 @@ package cloud
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/grafana/grafana-com-public-clients/go/gcom"
 	"github.com/grafana/terraform-provider-grafana/v2/internal/common"
 	"github.com/hashicorp/go-uuid"
+	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
@@ -45,4 +47,28 @@ func apiError(err error) diag.Diagnostics {
 			Detail:   detail,
 		},
 	}
+}
+
+type basePluginFrameworkResource struct {
+	client *gcom.APIClient
+}
+
+func (r *basePluginFrameworkResource) Configure(ctx context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
+	// Configure is called multiple times (sometimes when ProviderData is not yet available), we only want to configure once
+	if req.ProviderData == nil || r.client != nil {
+		return
+	}
+
+	client, ok := req.ProviderData.(*common.Client)
+
+	if !ok {
+		resp.Diagnostics.AddError(
+			"Unexpected Resource Configure Type",
+			fmt.Sprintf("Expected *common.Client, got: %T. Please report this issue to the provider developers.", req.ProviderData),
+		)
+
+		return
+	}
+
+	r.client = client.GrafanaCloudAPI
 }

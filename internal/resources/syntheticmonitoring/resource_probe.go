@@ -28,7 +28,7 @@ own private probes. These are only accessible to you and only write data to
 your Grafana Cloud account. Private probes are instances of the open source
 Grafana Synthetic Monitoring Agent.
 
-* [Official documentation](https://grafana.com/docs/grafana-cloud/monitor-public-endpoints/set-up/set-up-private-probes/)
+* [Official documentation](https://grafana.com/docs/grafana-cloud/testing/synthetic-monitoring/set-up/set-up-private-probes/)
 `,
 
 		CreateContext: withClient[schema.CreateContextFunc](resourceProbeCreate),
@@ -105,7 +105,32 @@ Grafana Synthetic Monitoring Agent.
 		},
 	}
 
-	return common.NewResource("grafana_synthetic_monitoring_probe", resourceProbeID, schema)
+	return common.NewLegacySDKResource(
+		"grafana_synthetic_monitoring_probe",
+		resourceProbeID,
+		schema,
+	).WithLister(listProbes)
+}
+
+func listProbes(ctx context.Context, client *common.Client, data any) ([]string, error) {
+	smClient := client.SMAPI
+	if smClient == nil {
+		return nil, fmt.Errorf("client not configured for SM API")
+	}
+
+	probeList, err := smClient.ListProbes(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var ids []string
+	for _, probe := range probeList {
+		if probe.Public {
+			continue
+		}
+		ids = append(ids, strconv.FormatInt(probe.Id, 10))
+	}
+	return ids, nil
 }
 
 func resourceProbeCreate(ctx context.Context, d *schema.ResourceData, c *smapi.Client) diag.Diagnostics {
