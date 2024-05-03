@@ -646,7 +646,6 @@ var (
 
 func resourceCheck() *common.Resource {
 	schema := &schema.Resource{
-
 		Description: `
 Synthetic Monitoring checks are tests that run on selected probes at defined
 intervals and report metrics and logs back to your Grafana Cloud account. The
@@ -1100,7 +1099,7 @@ func resourceCheckRead(ctx context.Context, d *schema.ResourceData, c *smapi.Cli
 			[]any{},
 		)
 		scripted.Add(map[string]any{
-			"script": chk.Settings.Scripted.Script,
+			"script": string(chk.Settings.Scripted.Script),
 		})
 		settings.Add(map[string]any{
 			"scripted": scripted,
